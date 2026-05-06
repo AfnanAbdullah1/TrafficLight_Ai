@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>AI Traffic Signal System</title>
+    <style>
+        /* ── RESET & BASE ─────────────────────────── */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            background: #0b0f17;
+            color: #e2e8f0;
+            font-family: system-ui, sans-serif;
+            padding-bottom: 60px
+        }
+
+        /* ── LAYOUT ──────────────────────────────── */
+        .wrap {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px
+        }
+
+        /* ── CARD ────────────────────────────────── */
+        .card {
+            background: #151e2e;
+            border-radius: 12px;
+            padding: 18px;
+            border: 1px solid rgba(255, 255, 255, .07)
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 14px;
+            color: #fff
+        }
+
+        /* ── HEADER ──────────────────────────────── */
+        .hdr {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px
+        }
+
+        .hdr h1 {
+            font-size: 1.4rem;
+            color: #fff
+        }
+
+        .hdr-right {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px
+        }
+
+        /* ── BADGES ──────────────────────────────── */
+        .badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: .8rem;
+            font-weight: 700;
+            border: 1px solid
+        }
+
+        .b-seq {
+            color: #4da9ff;
+            border-color: #4da9ff
+        }
+
+        .b-man {
+            color: #ffc400;
+            border-color: #ffc400
+        }
+
+        .b-den {
+            color: #00e57b;
+            border-color: #00e57b
+        }
+
+        .b-emg {
+            color: #ff3b5c;
+            border-color: #ff3b5c;
+            animation: pulse 1s infinite
+        }
+
+        .b-ok {
+            color: #00e57b;
+            border-color: #00e57b
+        }
+
+        .b-err {
+            color: #ff3b5c;
+            border-color: #ff3b5c
+        }
+
+        /* ── IP INPUT ────────────────────────────── */
+        .ip-row {
+            display: flex;
+            gap: 8px
+        }
+
+        .ip-in {
+            background: rgba(0, 0, 0, .4);
+            border: 1px solid rgba(255, 255, 255, .15);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: .9rem;
+            width: 170px;
+            outline: none
+        }
+
+        .ip-in:focus {
+            border-color: #4da9ff
+        }
+
+        /* ── BUTTONS ─────────────────────────────── */
+        .btn {
+            padding: 9px 18px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: .9rem;
+            font-weight: 700;
+            transition: opacity .15s
+        }
+
+        .btn:active {
+            opacity: .75
+        }
+
+        .btn-blue {
+            background: #4da9ff;
+            color: #000
+        }
+
+        .btn-green {
+            background: rgba(0, 229, 123, .15);
+            color: #00e57b;
+            border: 1px solid #00e57b
+        }
+
+        .btn-red {
+            background: rgba(255, 59, 92, .15);
+            color: #ff3b5c;
+            border: 1px solid #ff3b5c
+        }
+
+        .btn-yellow {
+            background: rgba(255, 196, 0, .15);
+            color: #ffc400;
+            border: 1px solid #ffc400
+        }
+
+        .btn-emg {
+            background: rgba(255, 59, 92, .2);
+            color: #ff3b5c;
+            border: 1px solid #ff3b5c;
+            font-size: 1rem
+        }
+
+        .btn-clear {
+            background: rgba(0, 229, 123, .2);
+            color: #00e57b;
+            border: 1px solid #00e57b;
+            font-size: 1rem
+        }
+
+        .btn-mode {
+            background: rgba(255, 255, 255, .06);
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, .1)
+        }
+
+        .btn-mode.on {
+            background: rgba(77, 169, 255, .15);
+            color: #4da9ff;
+            border-color: #4da9ff
+        }
+
+        .btn-preset {
+            background: rgba(255, 255, 255, .06);
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, .1)
+        }
+
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px
+        }
+
+        /* ── LANES GRID ──────────────────────────── */
+        .lanes {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px
+        }
+
+        @media(min-width:700px) {
+            .lanes {
+                grid-template-columns: repeat(3, 1fr)
+            }
+        }
+
+        /* ── LANE CARD ───────────────────────────── */
+        .lane-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            border: 2px solid transparent;
+            transition: border-color .3s, box-shadow .3s
+        }
+
+        .lane-card.active {
+            border-color: #00e57b;
+            box-shadow: 0 0 18px rgba(0, 229, 123, .35)
+        }
+
+        .lane-card.emg-lane {
+            border-color: #ff3b5c;
+            box-shadow: 0 0 18px rgba(255, 59, 92, .5)
+        }
+
+        .lane-card h2 {
+            font-size: 1.1rem;
+            margin: 0
+        }
+
+        /* ── CAMERA BOX ──────────────────────────── */
+        .cam-box {
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #050810;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, .07);
+            color: #4da9ff;
+            font-size: .85rem;
+            gap: 6px
+        }
+
+        .cam-icon {
+            font-size: 2rem
+        }
+
+        /* ── TRAFFIC LIGHT ───────────────────────── */
+        .tl {
+            background: #080808;
+            border: 2px solid #1a1a1a;
+            border-radius: 40px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px
+        }
+
+        .bulb {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            opacity: .15;
+            transition: opacity .3s, box-shadow .3s
+        }
+
+        .bulb.r {
+            background: #ff3b5c
+        }
+
+        .bulb.y {
+            background: #ffc400
+        }
+
+        .bulb.g {
+            background: #00e57b
+        }
+
+        .bulb.r.on {
+            opacity: 1;
+            box-shadow: 0 0 20px rgba(255, 59, 92, .8)
+        }
+
+        .bulb.y.on {
+            opacity: 1;
+            box-shadow: 0 0 20px rgba(255, 196, 0, .8)
+        }
+
+        .bulb.g.on {
+            opacity: 1;
+            box-shadow: 0 0 20px rgba(0, 229, 123, .8)
+        }
+
+        /* ── TIMER ───────────────────────────────── */
+        .timer {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            min-height: 2.6rem
+        }
+
+        .count {
+            font-size: .95rem;
+            color: #4da9ff;
+            font-weight: 600
+        }
+
+        /* ── CUSTOM PANEL ────────────────────────── */
+        .custom-panel {
+            margin-top: 12px;
+            background: rgba(0, 0, 0, .25);
+            border-radius: 8px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, .05)
+        }
+
+        .custom-panel label {
+            color: #e2e8f0;
+            font-size: .9rem
+        }
+
+        .custom-panel input[type=number] {
+            width: 60px;
+            padding: 5px;
+            background: #0b0f17;
+            border: 1px solid rgba(255, 255, 255, .2);
+            color: #fff;
+            border-radius: 4px;
+            text-align: center;
+            margin: 0 6px
+        }
+
+        /* ── MANUAL SECTION ──────────────────────── */
+        .manual-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px
+        }
+
+        @media(min-width:700px) {
+            .manual-grid {
+                grid-template-columns: repeat(3, 1fr)
+            }
+        }
+
+        .man-lane {
+            background: rgba(0, 0, 0, .2);
+            border-radius: 8px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, .05)
+        }
+
+        .man-lane h3 {
+            margin-bottom: 10px;
+            font-size: 1rem;
+            color: #fff
+        }
+
+        .adj-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            background: #0b0f17;
+            padding: 8px;
+            border-radius: 8px
+        }
+
+        .adj-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, .1);
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1
+        }
+
+        .adj-val {
+            font-weight: 700;
+            width: 26px;
+            text-align: center
+        }
+
+        /* ── SHORTCUTS ───────────────────────────── */
+        .shortcuts {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, .07)
+        }
+
+        .shortcuts h3 {
+            margin-bottom: 10px;
+            font-size: .95rem;
+            color: #94a3b8
+        }
+
+        .sc-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            font-size: .85rem;
+            color: #64748b
+        }
+
+        @media(min-width:700px) {
+            .sc-grid {
+                grid-template-columns: repeat(4, 1fr)
+            }
+        }
+
+        kbd {
+            background: rgba(255, 255, 255, .1);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #e2e8f0;
+            border-bottom: 2px solid rgba(255, 255, 255, .2);
+            margin-right: 4px
+        }
+
+        /* ── EMERGENCY BANNER ────────────────────── */
+        #emg-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #ff3b5c;
+            color: #fff;
+            padding: 12px 20px;
+            z-index: 999;
+            display: none;
+            animation: flash 1.5s infinite
+        }
+
+        .emg-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px
+        }
+
+        .emg-inner h2 {
+            font-size: 1.2rem
+        }
+
+        /* ── STATUS BAR ──────────────────────────── */
+        #status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #151e2e;
+            border-top: 1px solid rgba(255, 255, 255, .08);
+            padding: 10px 20px;
+            text-align: center;
+            font-weight: 600;
+            color: #4da9ff;
+            z-index: 100
+        }
+
+        /* ── UTILS ───────────────────────────────── */
+        .hidden {
+            display: none !important
+        }
+
+        .mt8 {
+            margin-top: 8px
+        }
+
+        /* ── ANIMATIONS ──────────────────────────── */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 59, 92, .5)
+            }
+
+            50% {
+                box-shadow: 0 0 0 8px rgba(255, 59, 92, 0)
+            }
+        }
+
+        @keyframes flash {
+
+            0%,
+            100% {
+                background: #ff3b5c
+            }
+
+            50% {
+                background: #c0203f
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- EMERGENCY BANNER -->
+    <div id="emg-banner">
+        <div class="emg-inner">
+            <h2 id="emg-text">🚨 EMERGENCY ACTIVE</h2>
+            <button class="btn btn-clear" onclick="clearEmg()">✅ Clear Emergency</button>
+        </div>
+    </div>
+
+    <div class="wrap">
+
+        <!-- HEADER -->
+        <div class="card hdr">
+            <h1>🚦 AI Traffic Signal System</h1>
+            <div class="hdr-right">
+                <span id="mode-badge" class="badge b-seq">🔵 Sequence Mode</span>
+                <span id="wifi-badge" class="badge b-err">🔴 ESP32 Not Set</span>
+                <div class="ip-row">
+                    <input id="ip-in" class="ip-in" placeholder="Enter ESP32 IP" type="text">
+                    <button class="btn btn-blue" onclick="connectESP()">Connect</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- LANES -->
+        <div class="lanes">
+
+            <!-- Lane 1 -->
+            <div class="card lane-card" id="c-lane1">
+                <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
+                    <h2>Lane 1</h2>
+                    <span id="ai-lane1" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                </div>
+                <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
+                    <img id="vid-lane1" src="/video_feed/lane1" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane1').style.display='block';">
+                    <div id="cam-icon-lane1" style="display:none; text-align:center;">
+                        <div class="cam-icon">📷</div>
+                        <div>No Stream</div>
+                    </div>
+                </div>
+                <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
+                    <input id="cam-ip-lane1" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane1')">Set</button>
+                    <button id="btn-stop-lane1" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane1')">Stop</button>
+                </div>
+                <div class="tl">
+                    <div class="bulb r" id="r-lane1"></div>
+                    <div class="bulb y" id="y-lane1"></div>
+                    <div class="bulb g" id="g-lane1"></div>
+                </div>
+                <div class="timer" id="t-lane1">--</div>
+            </div>
+
+            <!-- Lane 2 -->
+            <div class="card lane-card" id="c-lane2">
+                <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
+                    <h2>Lane 2</h2>
+                    <span id="ai-lane2" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                </div>
+                <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
+                    <img id="vid-lane2" src="/video_feed/lane2" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane2').style.display='block';">
+                    <div id="cam-icon-lane2" style="display:none; text-align:center;">
+                        <div class="cam-icon">📷</div>
+                        <div>No Stream</div>
+                    </div>
+                </div>
+                <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
+                    <input id="cam-ip-lane2" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane2')">Set</button>
+                    <button id="btn-stop-lane2" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane2')">Stop</button>
+                </div>
+                <div class="tl">
+                    <div class="bulb r" id="r-lane2"></div>
+                    <div class="bulb y" id="y-lane2"></div>
+                    <div class="bulb g" id="g-lane2"></div>
+                </div>
+                <div class="timer" id="t-lane2">--</div>
+            </div>
+
+            <!-- Lane 3 -->
+            <div class="card lane-card" id="c-lane3">
+                <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
+                    <h2>Lane 3</h2>
+                    <span id="ai-lane3" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                </div>
+                <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
+                    <img id="vid-lane3" src="/video_feed/lane3" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane3').style.display='block';">
+                    <div id="cam-icon-lane3" style="display:none; text-align:center;">
+                        <div class="cam-icon">📷</div>
+                        <div>No Stream</div>
+                    </div>
+                </div>
+                <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
+                    <input id="cam-ip-lane3" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane3')">Set</button>
+                    <button id="btn-stop-lane3" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane3')">Stop</button>
+                </div>
+                <div class="tl">
+                    <div class="bulb r" id="r-lane3"></div>
+                    <div class="bulb y" id="y-lane3"></div>
+                    <div class="bulb g" id="g-lane3"></div>
+                </div>
+                <div class="timer" id="t-lane3">--</div>
+            </div>
+
+        </div>
+
+        <!-- SYSTEM & MODE CONTROL -->
+        <div class="card">
+            <h2>System & Mode Control</h2>
+            <div class="row">
+                <button id="btn-pwr" class="btn btn-mode on" onclick="togglePower()">⏻ System ON</button>
+                <button id="btn-seq" class="btn btn-mode on" onclick="setMode('sequence')">🔵 Sequence</button>
+                <button id="btn-man" class="btn btn-mode" onclick="setMode('manual')">🟠 Manual</button>
+            </div>
+        </div>
+
+        <!-- TIMING PRESETS -->
+        <div class="card">
+            <h2>Timing Presets</h2>
+            <div class="row">
+                <button class="btn btn-preset" onclick="setTiming('default')">⚡ Default (5s each)</button>
+                <button class="btn btn-preset" onclick="setTiming('equal')">⚖️ Equal (5s each)</button>
+                <button class="btn btn-preset" onclick="toggleCustom()">⚙️ Custom Timing</button>
+            </div>
+            <div id="custom-panel" class="custom-panel hidden">
+                <div class="row">
+                    <label>Lane 1: <input type="number" id="ct1" value="5" min="1" max="99"> s</label>
+                    <label>Lane 2: <input type="number" id="ct2" value="5" min="1" max="99"> s</label>
+                    <label>Lane 3: <input type="number" id="ct3" value="5" min="1" max="99"> s</label>
+                </div>
+                <button class="btn btn-blue mt8" onclick="applyCustom()">Apply Custom Timing</button>
+            </div>
+        </div>
+
+        <!-- MANUAL CONTROLS -->
+        <div class="card hidden" id="manual-section">
+            <h2>Manual Signal Control</h2>
+            <div class="manual-grid">
+
+                <div class="man-lane">
+                    <h3>Lane 1</h3>
+                    <div class="row">
+                        <button class="btn btn-green" onclick="force('lane1','GREEN')">🟢 GREEN</button>
+                        <button class="btn btn-yellow" onclick="force('lane1','YELLOW')">🟡 YELLOW</button>
+                        <button class="btn btn-red" onclick="force('lane1','RED')">🔴 RED</button>
+                    </div>
+                    <div class="adj-row">
+                        <button class="adj-btn" onclick="adj('lane1',-1)">−</button>
+                        <span class="adj-val" id="av1">5</span>s
+                        <button class="adj-btn" onclick="adj('lane1', 1)">+</button>
+                        <button class="btn btn-blue" onclick="applyAdj('lane1')">Set</button>
+                    </div>
+                </div>
+
+                <div class="man-lane">
+                    <h3>Lane 2</h3>
+                    <div class="row">
+                        <button class="btn btn-green" onclick="force('lane2','GREEN')">🟢 GREEN</button>
+                        <button class="btn btn-yellow" onclick="force('lane2','YELLOW')">🟡 YELLOW</button>
+                        <button class="btn btn-red" onclick="force('lane2','RED')">🔴 RED</button>
+                    </div>
+                    <div class="adj-row">
+                        <button class="adj-btn" onclick="adj('lane2',-1)">−</button>
+                        <span class="adj-val" id="av2">5</span>s
+                        <button class="adj-btn" onclick="adj('lane2', 1)">+</button>
+                        <button class="btn btn-blue" onclick="applyAdj('lane2')">Set</button>
+                    </div>
+                </div>
+
+                <div class="man-lane">
+                    <h3>Lane 3</h3>
+                    <div class="row">
+                        <button class="btn btn-green" onclick="force('lane3','GREEN')">🟢 GREEN</button>
+                        <button class="btn btn-yellow" onclick="force('lane3','YELLOW')">🟡 YELLOW</button>
+                        <button class="btn btn-red" onclick="force('lane3','RED')">🔴 RED</button>
+                    </div>
+                    <div class="adj-row">
+                        <button class="adj-btn" onclick="adj('lane3',-1)">−</button>
+                        <span class="adj-val" id="av3">5</span>s
+                        <button class="adj-btn" onclick="adj('lane3', 1)">+</button>
+                        <button class="btn btn-blue" onclick="applyAdj('lane3')">Set</button>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="shortcuts">
+                <h3>Keyboard Shortcuts</h3>
+                <div class="sc-grid">
+                    <span><kbd>1</kbd>Lane 1 GREEN</span>
+                    <span><kbd>2</kbd>Lane 2 GREEN</span>
+                    <span><kbd>3</kbd>Lane 3 GREEN</span>
+                    <span><kbd>A</kbd>Sequence mode</span>
+                    <span><kbd>M</kbd>Manual mode</span>
+                    <span><kbd>D</kbd>Default timing</span>
+                    <span><kbd>E</kbd>Equal timing</span>
+                    <span><kbd>Esc</kbd>Clear emergency</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- EMERGENCY & TIMING EXTENSIONS -->
+        <div class="card">
+            <h2>Emergency & Overrides</h2>
+            <div class="row">
+                <button class="btn btn-emg" onclick="emg('all_red')">🛑 Stop All (All Red)</button>
+                <button class="btn btn-emg" onclick="emg('lane1')">🚨 Open Lane 1</button>
+                <button class="btn btn-emg" onclick="emg('lane2')">🚨 Open Lane 2</button>
+                <button class="btn btn-emg" onclick="emg('lane3')">🚨 Open Lane 3</button>
+                <button class="btn btn-blue" onclick="addTime(5)">⏱️ +5s to Current Green</button>
+                <button class="btn btn-clear" onclick="clearEmg()">✅ Clear Emergency</button>
+            </div>
+        </div>
+
+    </div><!-- /wrap -->
+
+    <div id="status-bar">Connecting...</div>
+
+    <script>
+        // ── POLL ───────────────────────────────────
+        // This acts like a heartbeat. Every 800ms, the dashboard asks the Flask server 
+        // for the latest state (who is green, is there an emergency, AI counts, etc).
+        setInterval(poll, 800);
+        poll();
+
+        async function poll() {
+            try {
+                // Fetch the current system state from the Python backend
+                const d = await (await fetch('/status')).json();
+                render(d); // Update the screen with the new data
+            } catch (e) {
+                document.getElementById('status-bar').textContent = '⚠️ Cannot reach server';
+            }
+        }
+
+        // ── RENDER ─────────────────────────────────
+        // This function takes the data from the server and instantly updates the screen.
+        // It changes colors, highlights the active lane, and updates the timer.
+        function render(d) {
+            const lanes = ['lane1', 'lane2', 'lane3'];
+
+            // 1. Update the Main System Status Badge
+            const mb = document.getElementById('mode-badge');
+            if (!d.system_on) {
+                mb.className = 'badge b-err'; mb.textContent = '⚫ System OFF (All Red)';
+            } else if (d.emergency_active) {
+                mb.className = 'badge b-emg'; mb.textContent = '🔴 Emergency Active';
+            } else if (d.mode === 'sequence') {
+                mb.className = 'badge b-seq'; mb.textContent = '🔵 Sequence Mode';
+            } else {
+                mb.className = 'badge b-man'; mb.textContent = '🟠 Manual Mode';
+            }
+
+            // 2. Update the ESP32 Hardware Connection Badge
+            const wb = document.getElementById('wifi-badge');
+            if (d.wifi_connected) {
+                wb.className = 'badge b-ok';
+                wb.textContent = '🟢 ESP32 Connected (' + d.esp32_ip + ')';
+            } else {
+                wb.className = 'badge b-err';
+                wb.textContent = d.esp32_ip ? '🔴 ESP32 Disconnected (' + d.esp32_ip + ')' : '🔴 ESP32 Not Set';
+            }
+
+            // 3. Update the Power & Mode Toggle Buttons
+            const pwrBtn = document.getElementById('btn-pwr');
+            pwrBtn.classList.toggle('on', d.system_on);
+            pwrBtn.textContent = d.system_on ? '⏻ System ON' : '⏻ System OFF';
+            pwrBtn.style.color = d.system_on ? '#00e57b' : '#ff3b5c';
+            pwrBtn.style.borderColor = d.system_on ? '#00e57b' : '#ff3b5c';
+
+            document.getElementById('btn-seq').classList.toggle('on', d.mode === 'sequence');
+            document.getElementById('btn-man').classList.toggle('on', d.mode === 'manual');
+
+            // Show manual controls only if Manual Mode is active
+            document.getElementById('manual-section').classList.toggle('hidden', d.mode !== 'manual');
+
+            // 4. Update the individual Lane Cards (Traffic Lights & AI Badges)
+            lanes.forEach(lane => {
+                const sig = d.signals[lane];
+                const card = document.getElementById('c-' + lane);
+                const isActive = (d.active_lane === lane && !d.emergency_active);
+                const isEmg = (d.emergency_active && d.emergency_lane === lane);
+
+                // Highlight the entire lane card if it's Green or in Emergency
+                card.classList.toggle('active', isActive);
+                card.classList.toggle('emg-lane', isEmg);
+
+                // Bulbs
+                document.getElementById('r-' + lane).classList.toggle('on', sig === 'RED');
+                document.getElementById('y-' + lane).classList.toggle('on', sig === 'YELLOW');
+                document.getElementById('g-' + lane).classList.toggle('on', sig === 'GREEN');
+
+                // Timer
+                const tel = document.getElementById('t-' + lane);
+                tel.textContent = (lane === d.active_lane && !d.emergency_active && d.mode === 'sequence')
+                    ? d.timer + 's' : '--';
+
+                // AI Badge Update
+                const aiBadge = document.getElementById('ai-' + lane);
+                const aiState = d.ai_counts ? d.ai_counts[lane] : "None";
+                aiBadge.textContent = aiState.toUpperCase();
+                
+                if (aiState.includes('accident') || aiState.includes('acciedent')) {
+                    aiBadge.style.color = '#ff3b5c';
+                    aiBadge.style.borderColor = '#ff3b5c';
+                    aiBadge.style.fontWeight = 'bold';
+                } else if (aiState.includes('three')) {
+                    aiBadge.style.color = '#ffc400';
+                    aiBadge.style.borderColor = '#ffc400';
+                } else if (aiState.includes('two')) {
+                    aiBadge.style.color = '#4da9ff';
+                    aiBadge.style.borderColor = '#4da9ff';
+                } else if (aiState.includes('one')) {
+                    aiBadge.style.color = '#00e57b';
+                    aiBadge.style.borderColor = '#00e57b';
+                } else {
+                    aiBadge.style.color = '#94a3b8';
+                    aiBadge.style.borderColor = '#94a3b8';
+                }
+
+                // Retry image loading if IP is set but stream failed previously
+                const img = document.getElementById('vid-' + lane);
+                const icon = document.getElementById('cam-icon-' + lane);
+                const stopBtn = document.getElementById('btn-stop-' + lane);
+                
+                if (d.cam_ips && d.cam_ips[lane]) {
+                    stopBtn.style.display = 'inline-block';
+                    if (img.style.display === 'none') {
+                        // Try to reload periodically
+                        if (Math.random() > 0.8) {
+                            img.src = '/video_feed/' + lane + '?' + new Date().getTime();
+                            img.style.display = 'block';
+                            icon.style.display = 'none';
+                        }
+                    }
+                } else {
+                    stopBtn.style.display = 'none';
+                }
+            });
+
+            // Emergency banner
+            const banner = document.getElementById('emg-banner');
+            if (!d.system_on) {
+                banner.style.display = 'block';
+                document.getElementById('emg-text').textContent = '⚫ SYSTEM POWER OFF (All Red)';
+            } else if (d.emergency_active) {
+                banner.style.display = 'block';
+                if (d.emergency_lane === 'all_red') {
+                    document.getElementById('emg-text').textContent = '🛑 EMERGENCY ACTIVE — STOP ALL (ALL RED)';
+                } else {
+                    document.getElementById('emg-text').textContent =
+                        '🚨 EMERGENCY ACTIVE — ' + d.emergency_lane.toUpperCase() + ' IS GREEN';
+                }
+            } else {
+                banner.style.display = 'none';
+            }
+
+            // Status bar
+            document.getElementById('status-bar').textContent = d.status_message;
+        }
+
+        // ── ACTIONS ────────────────────────────────
+        async function connectESP() {
+            const ip = document.getElementById('ip-in').value.trim();
+            if (!ip) { alert('Enter ESP32 IP address first'); return; }
+            document.getElementById('status-bar').textContent = 'Connecting to ' + ip + '...';
+            const r = await post('/connect', { ip });
+            document.getElementById('status-bar').textContent =
+                r.connected ? 'Connected to ' + ip : 'Could not reach ' + ip;
+            poll();
+        }
+
+        async function setCamIP(lane) {
+            const ip = document.getElementById('cam-ip-' + lane).value.trim();
+            if (!ip) { alert('Enter Camera IP address first'); return; }
+            await post('/set_cam_ip', { lane: lane, ip: ip });
+            
+            // Force reload the image tag to start streaming
+            const img = document.getElementById('vid-' + lane);
+            img.src = '/video_feed/' + lane + '?' + new Date().getTime();
+            img.style.display = 'block';
+            document.getElementById('cam-icon-' + lane).style.display = 'none';
+            
+            poll();
+        }
+
+        async function stopCam(lane) {
+            // Send empty IP to disconnect
+            await post('/set_cam_ip', { lane: lane, ip: '' });
+            
+            // Reset input and UI
+            document.getElementById('cam-ip-' + lane).value = '';
+            document.getElementById('vid-' + lane).src = '';
+            document.getElementById('vid-' + lane).style.display = 'none';
+            document.getElementById('cam-icon-' + lane).style.display = 'block';
+            
+            poll();
+        }
+
+        function togglePower() {
+            const btn = document.getElementById('btn-pwr');
+            const isOn = btn.classList.contains('on');
+            post('/system_power', { on: !isOn });
+        }
+        function addTime(secs) { post('/add_time', { seconds: secs }); }
+        function setMode(m) { post('/set_mode', { mode: m }); }
+        function setTiming(p) { post('/set_timing', { preset: p }); }
+        function force(lane, signal) { post('/manual_signal', { lane, signal }); }
+        function emg(lane) { post('/emergency', { lane }); }
+        function clearEmg() { post('/clear_emergency', {}); }
+
+        function toggleCustom() {
+            document.getElementById('custom-panel').classList.toggle('hidden');
+        }
+        function applyCustom() {
+            const lane1 = +document.getElementById('ct1').value;
+            const lane2 = +document.getElementById('ct2').value;
+            const lane3 = +document.getElementById('ct3').value;
+            post('/set_timing', { preset: 'custom', lane1, lane2, lane3 });
+            document.getElementById('custom-panel').classList.add('hidden');
+        }
+
+        const _adj = { lane1: 5, lane2: 5, lane3: 5 };
+        function adj(lane, d) {
+            _adj[lane] = Math.max(1, (_adj[lane] || 5) + d);
+            const n = lane.replace('lane', '');
+            document.getElementById('av' + n).textContent = _adj[lane];
+        }
+        function applyAdj(lane) {
+            post('/adjust_timing', { lane, seconds: _adj[lane] });
+        }
+
+        // ── KEYBOARD ───────────────────────────────
+        document.addEventListener('keydown', e => {
+            if (e.target.tagName === 'INPUT') return;
+            const k = e.key.toLowerCase();
+            if (k === 'escape') clearEmg();
+            else if (k === 'a') setMode('sequence');
+            else if (k === 'm') setMode('manual');
+            else if (k === 'd') setTiming('default');
+            else if (k === 'e') setTiming('equal');
+            else if (k === '1') force('lane1', 'GREEN');
+            else if (k === '2') force('lane2', 'GREEN');
+            else if (k === '3') force('lane3', 'GREEN');
+        });
+
+        // ── FETCH HELPER ───────────────────────────
+        async function post(url, body) {
+            const r = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return r.json();
+        }
+    </script>
+</body>
+
+</html>

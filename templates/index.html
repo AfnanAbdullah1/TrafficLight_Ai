@@ -320,6 +320,68 @@
             font-weight: 600
         }
 
+        /* ── SENSOR BADGE ───────────────────────────── */
+        .sensor-badge {
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: .75rem;
+            font-weight: 700;
+            border: 1px solid #94a3b8;
+            color: #94a3b8;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px
+        }
+
+        .sensor-badge.sensor-low {
+            color: #94a3b8;
+            border-color: #94a3b8
+        }
+
+        .sensor-badge.sensor-med {
+            color: #00e57b;
+            border-color: #00e57b
+        }
+
+        .sensor-badge.sensor-high {
+            color: #ffc400;
+            border-color: #ffc400
+        }
+
+        /* ── SENSOR COUNTS SECTION ──────────────────── */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px
+        }
+
+        .sensor-lane {
+            background: rgba(0, 0, 0, .2);
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, .05);
+            text-align: center
+        }
+
+        .sensor-lane h3 {
+            margin-bottom: 8px;
+            font-size: .95rem;
+            color: #94a3b8
+        }
+
+        .sensor-count-val {
+            font-size: 2.4rem;
+            font-weight: 800;
+            color: #4da9ff;
+            line-height: 1.2
+        }
+
+        .sensor-count-label {
+            font-size: .8rem;
+            color: #64748b;
+            margin-top: 4px
+        }
+
         /* ── CUSTOM PANEL ────────────────────────── */
         .custom-panel {
             margin-top: 12px;
@@ -534,8 +596,9 @@
                 <span id="mode-badge" class="badge b-seq">🔵 Sequence Mode</span>
                 <span id="wifi-badge" class="badge b-err">🔴 ESP32 Not Set</span>
                 <div class="ip-row">
-                    <input id="ip-in" class="ip-in" placeholder="Enter ESP32 IP" type="text">
+                    <input id="ip-in" class="ip-in" placeholder="traffic-esp.local" type="text" value="traffic-esp.local" title="mDNS hostname — stays same when hotspot IP changes">
                     <button class="btn btn-blue" onclick="connectESP()">Connect</button>
+                    <button class="btn btn-blue" onclick="connectAll()" title="Connect ESP32 + all 3 cameras">Connect All</button>
                 </div>
             </div>
         </div>
@@ -547,7 +610,10 @@
             <div class="card lane-card" id="c-lane1">
                 <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
                     <h2>Lane 1</h2>
-                    <span id="ai-lane1" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span id="sensor-lane1" class="sensor-badge sensor-low">📡 Sensor: 0</span>
+                        <span id="ai-lane1" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    </div>
                 </div>
                 <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
                     <img id="vid-lane1" src="/video_feed/lane1" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane1').style.display='block';">
@@ -557,7 +623,7 @@
                     </div>
                 </div>
                 <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
-                    <input id="cam-ip-lane1" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <input id="cam-ip-lane1" class="ip-in" placeholder="cam-lane1.local" value="cam-lane1.local" style="width: 130px; padding: 6px;" type="text" title="mDNS hostname for lane 1 camera">
                     <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane1')">Set</button>
                     <button id="btn-stop-lane1" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane1')">Stop</button>
                 </div>
@@ -573,7 +639,10 @@
             <div class="card lane-card" id="c-lane2">
                 <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
                     <h2>Lane 2</h2>
-                    <span id="ai-lane2" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span id="sensor-lane2" class="sensor-badge sensor-low">📡 Sensor: 0</span>
+                        <span id="ai-lane2" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    </div>
                 </div>
                 <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
                     <img id="vid-lane2" src="/video_feed/lane2" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane2').style.display='block';">
@@ -583,7 +652,7 @@
                     </div>
                 </div>
                 <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
-                    <input id="cam-ip-lane2" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <input id="cam-ip-lane2" class="ip-in" placeholder="cam-lane2.local" value="cam-lane2.local" style="width: 130px; padding: 6px;" type="text" title="mDNS hostname for lane 2 camera">
                     <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane2')">Set</button>
                     <button id="btn-stop-lane2" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane2')">Stop</button>
                 </div>
@@ -599,7 +668,10 @@
             <div class="card lane-card" id="c-lane3">
                 <div style="width:100%; display:flex; justify-content:space-between; align-items:center;">
                     <h2>Lane 3</h2>
-                    <span id="ai-lane3" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <span id="sensor-lane3" class="sensor-badge sensor-low">📡 Sensor: 0</span>
+                        <span id="ai-lane3" class="badge" style="color:#94a3b8; border-color:#94a3b8; font-size: 0.7rem;">AI: None</span>
+                    </div>
                 </div>
                 <div class="cam-box" style="margin-bottom: 10px; overflow: hidden; position: relative;">
                     <img id="vid-lane3" src="/video_feed/lane3" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; document.getElementById('cam-icon-lane3').style.display='block';">
@@ -609,7 +681,7 @@
                     </div>
                 </div>
                 <div class="ip-row" style="width: 100%; justify-content: center; margin-bottom: 10px;">
-                    <input id="cam-ip-lane3" class="ip-in" placeholder="ESP32-CAM IP" style="width: 110px; padding: 6px;" type="text">
+                    <input id="cam-ip-lane3" class="ip-in" placeholder="cam-lane3.local" value="cam-lane3.local" style="width: 130px; padding: 6px;" type="text" title="mDNS hostname for lane 3 camera">
                     <button class="btn btn-blue" style="padding: 6px 10px;" onclick="setCamIP('lane3')">Set</button>
                     <button id="btn-stop-lane3" class="btn btn-red" style="padding: 6px 10px; display: none;" onclick="stopCam('lane3')">Stop</button>
                 </div>
@@ -621,6 +693,31 @@
                 <div class="timer" id="t-lane3">--</div>
             </div>
 
+        </div>
+
+        <!-- ULTRASONIC SENSOR COUNTS -->
+        <div class="card">
+            <h2>📡 Ultrasonic Sensor Car Counts</h2>
+            <div class="sensor-grid">
+                <div class="sensor-lane">
+                    <h3>Lane 1</h3>
+                    <div class="sensor-count-val" id="sensor-val-lane1">0</div>
+                    <div class="sensor-count-label">cars detected</div>
+                </div>
+                <div class="sensor-lane">
+                    <h3>Lane 2</h3>
+                    <div class="sensor-count-val" id="sensor-val-lane2">0</div>
+                    <div class="sensor-count-label">cars detected</div>
+                </div>
+                <div class="sensor-lane">
+                    <h3>Lane 3</h3>
+                    <div class="sensor-count-val" id="sensor-val-lane3">0</div>
+                    <div class="sensor-count-label">cars detected</div>
+                </div>
+            </div>
+            <div style="margin-top: 12px; text-align: center;">
+                <button class="btn btn-yellow" onclick="resetSensors()">🔄 Reset All Counters</button>
+            </div>
         </div>
 
         <!-- SYSTEM & MODE CONTROL -->
@@ -741,6 +838,8 @@
         // for the latest state (who is green, is there an emergency, AI counts, etc).
         setInterval(poll, 800);
         poll();
+        // Auto-connect using mDNS hostnames (no IP paste after hotspot change)
+        // setTimeout(connectAll, 1200);
 
         async function poll() {
             try {
@@ -855,6 +954,31 @@
                 } else {
                     stopBtn.style.display = 'none';
                 }
+
+                // Sensor Badge Update
+                const sensorBadge = document.getElementById('sensor-' + lane);
+                const sensorCount = d.sensor_counts ? d.sensor_counts[lane] : 0;
+                sensorBadge.textContent = '📡 Sensor: ' + sensorCount;
+                if (sensorCount >= 4) {
+                    sensorBadge.className = 'sensor-badge sensor-high';
+                } else if (sensorCount >= 1) {
+                    sensorBadge.className = 'sensor-badge sensor-med';
+                } else {
+                    sensorBadge.className = 'sensor-badge sensor-low';
+                }
+
+                // Sensor Count Section Update
+                const sensorValEl = document.getElementById('sensor-val-' + lane);
+                if (sensorValEl) {
+                    sensorValEl.textContent = sensorCount;
+                    if (sensorCount >= 4) {
+                        sensorValEl.style.color = '#ffc400';
+                    } else if (sensorCount >= 1) {
+                        sensorValEl.style.color = '#00e57b';
+                    } else {
+                        sensorValEl.style.color = '#4da9ff';
+                    }
+                }
             });
 
             // Emergency banner
@@ -881,34 +1005,57 @@
         // ── ACTIONS ────────────────────────────────
         async function connectESP() {
             const ip = document.getElementById('ip-in').value.trim();
-            if (!ip) { alert('Enter ESP32 IP address first'); return; }
+            if (!ip) { alert('Enter ESP32 hostname (e.g. traffic-esp.local)'); return; }
             document.getElementById('status-bar').textContent = 'Connecting to ' + ip + '...';
             const r = await post('/connect', { ip });
-            document.getElementById('status-bar').textContent =
-                r.connected ? 'Connected to ' + ip : 'Could not reach ' + ip;
+            let msg = r.connected ? 'Connected to ' + ip : 'Could not reach ' + ip;
+            if (r.resolved_ip) msg += ' (' + r.resolved_ip + ')';
+            document.getElementById('status-bar').textContent = msg;
             poll();
         }
 
-        async function setCamIP(lane) {
-            const ip = document.getElementById('cam-ip-' + lane).value.trim();
-            if (!ip) { alert('Enter Camera IP address first'); return; }
-            await post('/set_cam_ip', { lane: lane, ip: ip });
-            
-            // Force reload the image tag to start streaming
+        async function connectAll() {
+            const esp_ip = document.getElementById('ip-in').value.trim();
+            const body = { esp_ip };
+            ['lane1', 'lane2', 'lane3'].forEach(lane => {
+                body['cam_' + lane] = document.getElementById('cam-ip-' + lane).value.trim();
+            });
+            document.getElementById('status-bar').textContent = 'Connecting all devices...';
+            const r = await post('/connect_all', body);
+            let msg = r.esp_connected
+                ? 'ESP32 OK: ' + r.esp_host
+                : 'ESP32 offline: ' + r.esp_host;
+            if (r.esp_resolved_ip) msg += ' (' + r.esp_resolved_ip + ')';
+            ['lane1', 'lane2', 'lane3'].forEach(lane => {
+                const ok = r.cameras && r.cameras[lane];
+                msg += ' | ' + lane + (ok ? ' cam OK' : ' cam ?');
+                if (ok) setCamStream(lane);
+            });
+            document.getElementById('status-bar').textContent = msg;
+            poll();
+        }
+
+        function setCamStream(lane) {
             const img = document.getElementById('vid-' + lane);
             img.src = '/video_feed/' + lane + '?' + new Date().getTime();
             img.style.display = 'block';
             document.getElementById('cam-icon-' + lane).style.display = 'none';
+        }
+
+        async function setCamIP(lane) {
+            const ip = document.getElementById('cam-ip-' + lane).value.trim();
+            if (!ip) { alert('Enter camera hostname (e.g. cam-lane1.local)'); return; }
+            await post('/set_cam_ip', { lane: lane, ip: ip });
             
+            setCamStream(lane);
             poll();
         }
 
         async function stopCam(lane) {
-            // Send empty IP to disconnect
             await post('/set_cam_ip', { lane: lane, ip: '' });
-            
-            // Reset input and UI
-            document.getElementById('cam-ip-' + lane).value = '';
+
+            const defaults = { lane1: 'cam-lane1.local', lane2: 'cam-lane2.local', lane3: 'cam-lane3.local' };
+            document.getElementById('cam-ip-' + lane).value = defaults[lane];
             document.getElementById('vid-' + lane).src = '';
             document.getElementById('vid-' + lane).style.display = 'none';
             document.getElementById('cam-icon-' + lane).style.display = 'block';
@@ -927,6 +1074,7 @@
         function force(lane, signal) { post('/manual_signal', { lane, signal }); }
         function emg(lane) { post('/emergency', { lane }); }
         function clearEmg() { post('/clear_emergency', {}); }
+        function resetSensors() { post('/reset_sensor', {}); }
 
         function toggleCustom() {
             document.getElementById('custom-panel').classList.toggle('hidden');

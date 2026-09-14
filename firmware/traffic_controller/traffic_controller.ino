@@ -8,41 +8,62 @@
  * from the Flask dashboard over WiFi.
  * 
  * DASHBOARD SENDS:
- *   GET  /status  → We reply with connection info
- *   POST /signal  → We receive {"lane1":"GREEN","lane2":"RED","lane3":"RED"}
+ *   GET  /status         → We reply with connection info + Sensor counts
+ *   GET  /sensor_counts  → We reply with car counts from Ultrasonic sensors
+ *   POST /signal         → We receive {"lane1":"GREEN","lane2":"RED","lane3":"RED"}
+ *   POST /reset_counts   → We reset all Ultrasonic car counters to zero
  * 
  * WIRING (Change pins below to match your setup):
  *   Road A (Lane 1): RED=23, YELLOW=22, GREEN=21
  *   Road B (Lane 2): RED=19, YELLOW=18, GREEN=5
  *   Road C (Lane 3): RED=26, YELLOW=25, GREEN=4
- *   Push Button    : PIN=15
+ *   Ultrasonic Lane 1: TRIG=13, ECHO=12
+ *   Ultrasonic Lane 2: TRIG=14, ECHO=27
+ *   Ultrasonic Lane 3: TRIG=15, ECHO=32
  * 
  * HOW TO USE:
- *   1. Change WiFi credentials below
+ *   1. WiFi: edit firmware/wifi_config.h if needed
  *   2. Change pin numbers if your wiring is different
  *   3. Upload to ESP32 via Arduino IDE
- *   4. Open Serial Monitor (115200 baud)
- *   5. Copy the IP address shown
- *   6. Enter that IP in the dashboard header
- *   7. Click Connect → WiFi badge turns green
- *   8. All dashboard controls now work on hardware
+ *   4. Dashboard uses hostname: traffic-esp.local (no IP paste needed)
+ *   5. Click Connect (or Connect All) → WiFi badge turns green
+ *   6. All dashboard controls now work on hardware
  * =====================================================
  */
 
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include "wifi_config.h"
 
 // =====================================================
-// WIFI SETTINGS — CHANGE THESE TO YOUR WIFI
+// WIFI — credentials in wifi_config.h (TrafficSys)
 // =====================================================
-const char* ssid     = "Care";
-const char* password = "Care@123";
+const char* ssid     = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
+
+// Fixed mDNS name — dashboard connects to traffic-esp.local
+const char* MDNS_HOSTNAME = "traffic-esp";
 
 // =====================================================
 // WEB SERVER ON PORT 80
 // =====================================================
 WebServer server(80);
+
+bool mdnsStarted = false;
+
+void startMdns() {
+    if (MDNS.begin(MDNS_HOSTNAME)) {
+        mdnsStarted = true;
+        Serial.print("mDNS hostname: http://");
+        Serial.print(MDNS_HOSTNAME);
+        Serial.println(".local");
+    } else {
+        mdnsStarted = false;
+        Serial.println("mDNS start failed — use IP from Serial Monitor");
+    }
+}
 
 // =====================================================
 // PIN DEFINITIONS — CHANGE THESE TO MATCH YOUR WIRING
@@ -63,8 +84,18 @@ WebServer server(80);
 #define C_YELLOW 25
 #define C_GREEN  4
 
-// Push Button (Toggle ON/OFF)
-#define BUTTON_PIN 15
+// Ultrasonic Sensors (HC-SR04) for Car Counting
+#define TRIG1 13
+#define ECHO1 12
+
+#define TRIG2 14
+#define ECHO2 27
+
+#define TRIG3 15
+#define ECHO3 32
+
+// Ultrasonic Threshold — distance in cm to detect a car
+#define DIST_THRESHOLD 5  // Count if object is closer than 5 cm
 
 // =====================================================
 // CURRENT STATE TRACKING
@@ -73,13 +104,18 @@ String lane1State = "RED";
 String lane2State = "RED";
 String lane3State = "RED";
 
-// Hardware System Power State
+// Hardware System Power State (now always true — controlled from dashboard only)
 bool systemOn = true;
 
-// Button Debounce Variables
-unsigned long lastDebounceTime = 0;
-int lastButtonState = HIGH;
-int buttonState = HIGH;
+// Ultrasonic Car Count Variables
+int carCount1 = 0;
+int carCount2 = 0;
+int carCount3 = 0;
+
+// State tracking to prevent double counting
+bool carPresent1 = false;
+bool carPresent2 = false;
+bool carPresent3 = false;
 
 // =====================================================
 // SET A SINGLE LANE's LIGHTS
@@ -130,29 +166,57 @@ void allRed() {
 }
 
 // =====================================================
-// BUTTON HANDLING
+// ULTRASONIC SENSOR HANDLING (Car Counting)
 // =====================================================
-void checkButton() {
-    int reading = digitalRead(BUTTON_PIN);
+long measureDistance(int trigPin, int echoPin) {
+    // Clear the trigger
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
     
-    // Check for state change (debouncing)
-    if (reading != lastButtonState) {
-        lastDebounceTime = millis();
-    }
+    // Send 10 microsecond pulse
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
     
-    // If stable for 50ms, consider it a valid state
-    if ((millis() - lastDebounceTime) > 50) {
-        if (reading != buttonState) {
-            buttonState = reading;
-            if (buttonState == LOW) { // Button pressed
-                systemOn = !systemOn; // Toggle system state
-                Serial.println(systemOn ? "[HARDWARE] SYSTEM ON" : "[HARDWARE] SYSTEM OFF");
-                applySignals();       // Apply the new state to lights immediately
-            }
+    // Read the echo pulse duration
+    long duration = pulseIn(echoPin, HIGH, 30000); // 30ms timeout (~5m max)
+    
+    if (duration == 0) return 999; // Timeout / No ping
+    
+    // Calculate distance in cm (Speed of sound = 343m/s)
+    long distance = duration * 0.034 / 2;
+    return distance;
+}
+
+void checkUltrasonicSensor(int trigPin, int echoPin, bool &carPresent, int &count, const char* label) {
+    long distance = measureDistance(trigPin, echoPin);
+    
+    // Detect if car is within threshold
+    if (distance < DIST_THRESHOLD) {
+        if (!carPresent) {
+            // Car just arrived!
+            count++;
+            carPresent = true;
+            Serial.print("[Sensor] ");
+            Serial.print(label);
+            Serial.print(" car detected (");
+            Serial.print(distance);
+            Serial.print(" cm)! Total: ");
+            Serial.println(count);
         }
+    } else {
+        // Car has left
+        carPresent = false;
     }
-    
-    lastButtonState = reading;
+}
+
+void checkSensors() {
+    checkUltrasonicSensor(TRIG1, ECHO1, carPresent1, carCount1, "Lane 1");
+    // Small delay to avoid acoustic interference between sensors
+    delay(10); 
+    checkUltrasonicSensor(TRIG2, ECHO2, carPresent2, carCount2, "Lane 2");
+    delay(10);
+    checkUltrasonicSensor(TRIG3, ECHO3, carPresent3, carCount3, "Lane 3");
 }
 
 // =====================================================
@@ -176,8 +240,14 @@ void setup() {
         digitalWrite(p, LOW);
     }
     
-    // Set button pin as input with internal pull-up resistor
-    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    // Set Ultrasonic sensor pins
+    pinMode(TRIG1, OUTPUT);
+    pinMode(ECHO1, INPUT);
+    pinMode(TRIG2, OUTPUT);
+    pinMode(ECHO2, INPUT);
+    pinMode(TRIG3, OUTPUT);
+    pinMode(ECHO3, INPUT);
+    Serial.println("Ultrasonic sensors initialized");
 
     // Start with ALL RED for safety
     allRed();
@@ -198,7 +268,8 @@ void setup() {
         Serial.println("\nWiFi Connected!");
         Serial.print("IP Address: ");
         Serial.println(WiFi.localIP());
-        Serial.println("Enter this IP in the dashboard header");
+        startMdns();
+        Serial.println("Dashboard hostname: traffic-esp.local");
     } else {
         Serial.println("\nWiFi FAILED! Restarting in 5 seconds...");
         delay(5000);
@@ -209,13 +280,18 @@ void setup() {
     // Dashboard calls this every 2 seconds to check if ESP32 is alive
     // Must return HTTP 200 for the dashboard to show "WiFi Connected"
     server.on("/status", HTTP_GET, []() {
-        // Build current status JSON
-        StaticJsonDocument<256> doc;
+        // Build current status JSON (includes Ultrasonic car counts)
+        StaticJsonDocument<512> doc;
         doc["wifi"] = "connected";
+        doc["hostname"] = "traffic-esp.local";
+        doc["ip"] = WiFi.localIP().toString();
         doc["hardware_system_on"] = systemOn;
         doc["lane1"] = lane1State;
         doc["lane2"] = lane2State;
         doc["lane3"] = lane3State;
+        doc["sensor_lane1"] = carCount1;
+        doc["sensor_lane2"] = carCount2;
+        doc["sensor_lane3"] = carCount3;
 
         String response;
         serializeJson(doc, response);
@@ -277,10 +353,46 @@ void setup() {
         server.send(204);
     });
 
+    // ==================== ENDPOINT: GET /sensor_counts ====================
+    // Dashboard calls this to get the current car counts from Ultrasonic sensors
+    server.on("/sensor_counts", HTTP_GET, []() {
+        StaticJsonDocument<128> doc;
+        doc["lane1"] = carCount1;
+        doc["lane2"] = carCount2;
+        doc["lane3"] = carCount3;
+
+        String response;
+        serializeJson(doc, response);
+
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.send(200, "application/json", response);
+    });
+
+    // ==================== ENDPOINT: POST /reset_counts ====================
+    // Dashboard sends this to reset all car counters to zero
+    server.on("/reset_counts", HTTP_POST, []() {
+        carCount1 = 0;
+        carCount2 = 0;
+        carCount3 = 0;
+        Serial.println("[Sensor] All car counters reset to 0");
+
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.send(200, "application/json", "{\"success\":true}");
+    });
+
+    // Handle CORS preflight for /reset_counts
+    server.on("/reset_counts", HTTP_OPTIONS, []() {
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.sendHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+        server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+        server.send(204);
+    });
+
     // ==================== START SERVER ====================
     server.begin();
     Serial.println("================================");
     Serial.println("HTTP Server Started on port 80");
+    Serial.println("Ultrasonic sensors active for car counting (<5cm threshold)");
     Serial.println("Waiting for dashboard commands...");
     Serial.println("================================");
 }
@@ -291,11 +403,12 @@ void setup() {
 unsigned long lastReconnectAttempt = 0;
 
 void loop() {
-    checkButton();
+    checkSensors();
     server.handleClient();
 
     // Auto-reconnect WiFi if disconnected (non-blocking)
     if (WiFi.status() != WL_CONNECTED) {
+        mdnsStarted = false;
         unsigned long currentMillis = millis();
         if (currentMillis - lastReconnectAttempt >= 5000) {
             Serial.println("[WARN] WiFi lost! Attempting reconnect...");
@@ -303,5 +416,7 @@ void loop() {
             WiFi.reconnect();
             lastReconnectAttempt = currentMillis;
         }
+    } else if (!mdnsStarted) {
+        startMdns();
     }
 }

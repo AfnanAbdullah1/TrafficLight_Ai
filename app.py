@@ -11,6 +11,7 @@ import threading
 import socket
 import requests
 import cv2
+import numpy as np
 from flask import Flask, render_template, request, jsonify, Response
 
 try:
@@ -23,6 +24,51 @@ except Exception as e:
     model = None
 
 app = Flask(__name__)
+
+# ══════════════════════════════════════════════
+# mDNS HOSTNAMES (fixed — survive IP changes on new hotspot)
+# ══════════════════════════════════════════════
+DEFAULT_ESP_HOST = "traffic-esp.local"
+DEFAULT_CAM_HOSTS = {
+    "lane1": "cam-lane1.local",
+    "lane2": "cam-lane2.local",
+    "lane3": "cam-lane3.local",
+}
+
+
+def _normalize_host(raw: str) -> str:
+    """Accept hostname, IP, or pasted URL; return host part only."""
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    s = s.replace("http://", "").replace("https://", "")
+    s = s.split("/")[0].strip()
+    # Strip :port (not IPv6)
+    if s.count(":") == 1:
+        host, _, port = s.partition(":")
+        if port.isdigit():
+            s = host
+    return s
+
+
+def _resolve_host(host: str) -> str:
+    """Resolve mDNS/hostname to IPv4 for OpenCV and HTTP. IPs pass through."""
+    host = _normalize_host(host)
+    if not host:
+        return ""
+    try:
+        socket.inet_aton(host)
+        return host
+    except OSError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+        if infos:
+            return infos[0][4][0]
+    except OSError:
+        pass
+    return host
+
 
 # ══════════════════════════════════════════════
 # SHARED STATE (Memory accessible by all threads)
@@ -39,7 +85,7 @@ _state = {
     "timer":            0,
     "emergency_active": False,
     "emergency_lane":   None,
-    "esp32_ip":         "",
+    "esp32_ip":         DEFAULT_ESP_HOST,
     "wifi_connected":   False,
     "signals": {
         "lane1": "RED",
@@ -52,14 +98,19 @@ _state = {
         "lane3": 5,
     },
     "cam_ips": {
-        "lane1": "",
-        "lane2": "",
-        "lane3": "",
+        "lane1": DEFAULT_CAM_HOSTS["lane1"],
+        "lane2": DEFAULT_CAM_HOSTS["lane2"],
+        "lane3": DEFAULT_CAM_HOSTS["lane3"],
     },
     "ai_counts": {
         "lane1": "None",
         "lane2": "None",
         "lane3": "None",
+    },
+    "sensor_counts": {
+        "lane1": 0,
+        "lane2": 0,
+        "lane3": 0,
     }
 }
 
@@ -92,31 +143,39 @@ def _set(key, val):
 # This section contains the functions that talk to the physical traffic pole.
 # We use standard HTTP requests (like visiting a website) to send commands to the ESP32.
 
-def _esp32_post_signal(signals: dict, ip: str):
+def _esp32_post_signal(signals: dict, host: str):
     """Send signal dict to ESP32. Fire-and-forget."""
-    if not ip:
+    addr = _resolve_host(host)
+    if not addr:
         return
-    for _ in range(2):
+    for attempt in range(2):
         try:
-            requests.post(f"http://{ip}/signal",
+            requests.post(f"http://{addr}/signal",
                           json=signals, timeout=3.5)
             break
-        except Exception:
-            pass
+        except Exception as e:
+            if attempt == 1:
+                print(f"⚠️ [WARNING] Could not send signal to ESP32 at {addr}: {e}")
 
 
-def _esp32_check(ip: str):
-    """Return (wifi_connected, hardware_system_on) from ESP32."""
-    if not ip:
-        return False, True
+def _esp32_check(host: str):
+    """Return (wifi_connected, hardware_system_on, sensor_counts) from ESP32."""
+    addr = _resolve_host(host)
+    if not addr:
+        return False, True, None
     try:
-        r = requests.get(f"http://{ip}/status", timeout=3.5)
+        r = requests.get(f"http://{addr}/status", timeout=3.5)
         if r.status_code == 200:
             data = r.json()
-            return data.get("wifi") == "connected", data.get("hardware_system_on", True)
+            sensors = {
+                "lane1": data.get("sensor_lane1", 0),
+                "lane2": data.get("sensor_lane2", 0),
+                "lane3": data.get("sensor_lane3", 0),
+            }
+            return data.get("wifi") == "connected", data.get("hardware_system_on", True), sensors
     except Exception:
         pass
-    return False, True
+    return False, True, None
 
 
 # ══════════════════════════════════════════════
@@ -146,82 +205,95 @@ def _ai_worker(lane):
         if not cam_ip:
             time.sleep(1)
             continue
-            
-        # Standard ESP32-CAM MJPEG stream URL
-        stream_url = f"http://{cam_ip}:81/stream"
-        cap = cv2.VideoCapture(stream_url)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 2)
-        
-        if not cap.isOpened():
-            print(f"⚠️ [WARNING] Failed to connect to camera on {lane} at {stream_url}")
+
+        cam_addr = _resolve_host(cam_ip)
+        if not cam_addr:
             time.sleep(2)
             continue
-            
-        while True:
-            with _lock:
-                # Break if IP was changed or removed
-                if _state["cam_ips"][lane] != cam_ip:
-                    break
-            
-            ret, frame = cap.read()
-            if not ret:
-                break
+
+        # Standard ESP32-CAM MJPEG stream URL
+        stream_url = f"http://{cam_addr}:81/stream"
+        
+        try:
+            res = requests.get(stream_url, stream=True, timeout=(5, 10))
+            if res.status_code != 200:
+                print(f"⚠️ [WARNING] Failed to connect to camera on {lane} at {stream_url}")
+                time.sleep(2)
+                continue
                 
-            best_class = "None"
-            priority = -1
-            annotated_frame = frame
-            
-            if model:
-                # Run YOLO Inference
-                results = model(frame, verbose=False)
-                
-                if len(results) > 0:
-                    for box in results[0].boxes:
-                        cls_id = int(box.cls[0])
-                        cls_name = model.names[cls_id].lower()
+            bytes_data = b''
+            for chunk in res.iter_content(chunk_size=4096):
+                with _lock:
+                    if _state["cam_ips"][lane] != cam_ip:
+                        break
                         
-                        # Prioritize: Accident > Three > Two > One
-                        p = 0
-                        if "accident" in cls_name or "acciedent" in cls_name:
-                            p = 4
-                        elif "three" in cls_name:
-                            p = 3
-                        elif "two" in cls_name:
-                            p = 2
-                        elif "one" in cls_name:
-                            p = 1
-                        else:
-                            p = 0 # unknown class
+                bytes_data += chunk
+                a = bytes_data.find(b'\xff\xd8')
+                b = bytes_data.find(b'\xff\xd9')
+                if a != -1 and b != -1:
+                    jpg = bytes_data[a:b+2]
+                    bytes_data = bytes_data[b+2:]
+                    
+                    frame = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if frame is None:
+                        continue
+                        
+                    best_class = "None"
+                    priority = -1
+                    annotated_frame = frame
+                    
+                    if model:
+                        # Run YOLO Inference
+                        results = model(frame, verbose=False)
+                        
+                        if len(results) > 0:
+                            for box in results[0].boxes:
+                                cls_id = int(box.cls[0])
+                                cls_name = model.names[cls_id].lower()
+                                
+                                # Prioritize: Accident > Three > Two > One
+                                p = 0
+                                if "accident" in cls_name or "acciedent" in cls_name:
+                                    p = 4
+                                elif "three" in cls_name:
+                                    p = 3
+                                elif "two" in cls_name:
+                                    p = 2
+                                elif "one" in cls_name:
+                                    p = 1
+                                else:
+                                    p = 0 # unknown class
+                                    
+                                if p > priority:
+                                    priority = p
+                                    best_class = cls_name
                             
-                        if p > priority:
-                            priority = p
-                            best_class = cls_name
+                            # Annotate frame
+                            annotated_frame = results[0].plot()
                     
-                    # Annotate frame
-                    annotated_frame = results[0].plot()
-            
-            # Update state
-            with _lock:
-                _state["ai_counts"][lane] = best_class
-                
-                # Automatically trigger emergency if an accident is detected
-                if priority == 4 and not _state["emergency_active"]:
-                    _state["emergency_active"] = True
-                    _state["emergency_lane"] = "all_red"
-                    _state["active_lane"] = "none"
-                    sigs = {"lane1": "RED", "lane2": "RED", "lane3": "RED"}
-                    _state["signals"].update(sigs)
-                    esp_ip = _state["esp32_ip"]
+                    # Update state
+                    with _lock:
+                        _state["ai_counts"][lane] = best_class
+                        
+                        # Automatically trigger emergency if an accident is detected
+                        if priority == 4 and not _state["emergency_active"]:
+                            _state["emergency_active"] = True
+                            _state["emergency_lane"] = "all_red"
+                            _state["active_lane"] = "none"
+                            sigs = {"lane1": "RED", "lane2": "RED", "lane3": "RED"}
+                            _state["signals"].update(sigs)
+                            esp_ip = _state["esp32_ip"]
+                            
+                            print(f"🚨 ACCIDENT DETECTED ON {lane.upper()}! Triggering All Red Emergency.")
+                            threading.Thread(target=_esp32_post_signal, args=(sigs, esp_ip)).start()
                     
-                    print(f"🚨 ACCIDENT DETECTED ON {lane.upper()}! Triggering All Red Emergency.")
-                    threading.Thread(target=_esp32_post_signal, args=(sigs, esp_ip)).start()
-            
-            # Encode frame for web streaming
-            ret_jpg, jpeg = cv2.imencode('.jpg', annotated_frame)
-            if ret_jpg:
-                _latest_frames[lane] = jpeg.tobytes()
-                
-        cap.release()
+                    # Encode frame for web streaming
+                    ret_jpg, jpeg = cv2.imencode('.jpg', annotated_frame)
+                    if ret_jpg:
+                        _latest_frames[lane] = jpeg.tobytes()
+        except Exception as e:
+            print(f"⚠️ [WARNING] Stream error on {lane}: {e}")
+            time.sleep(2)
 
 # Start an AI worker for each lane
 for l in ["lane1", "lane2", "lane3"]:
@@ -253,9 +325,27 @@ def _sequence_worker():
 
         lane = lanes[idx]
 
+        # ── PREPARE TO GO (YELLOW) ──────────
+        sigs = {l: ("YELLOW" if l == lane else "RED") for l in lanes}
+        _apply(sigs, lane, 2)
+
+        interrupted = False
+        while True:
+            time.sleep(1)
+            with _lock:
+                if not _state["system_on"] or _state["mode"] != "sequence" or _state["emergency_active"]:
+                    interrupted = True
+                    break
+                _state["timer"] -= 1
+                if _state["timer"] <= 0:
+                    break
+        if interrupted:
+            continue
+
         # ── GREEN (Dynamic Duration) ────────
         with _lock:
             ai_cls = _state["ai_counts"][lane].lower()
+            sensor_count = _state["sensor_counts"][lane]
             
             # Calculate dynamic timing based on AI detection
             if "three" in ai_cls:
@@ -264,8 +354,16 @@ def _sequence_worker():
                 green_dur = 7
             elif "one" in ai_cls:
                 green_dur = 5
+            elif ai_cls == "none":
+                # Fallback to Sensor counts when AI cameras are offline
+                if sensor_count >= 4:
+                    green_dur = 10
+                elif sensor_count >= 1:
+                    green_dur = 7
+                else:
+                    green_dur = _state["timings"][lane]
             else:
-                # Fallback to default timing if nothing detected or no camera
+                # Fallback to default timing
                 green_dur = _state["timings"][lane]
 
         sigs = {l: ("GREEN" if l == lane else "RED") for l in lanes}
@@ -328,11 +426,11 @@ def _esp32_poller():
     while True:
         with _lock:
             ip = _state["esp32_ip"]
-        ok, hw_on = _esp32_check(ip)
+        ok, hw_on, sensors = _esp32_check(ip)
         with _lock:
             _state["wifi_connected"] = ok
-            if ok:
-                _state["system_on"] = hw_on
+            if sensors is not None:
+                _state["sensor_counts"].update(sensors)
         time.sleep(3)
 
 
@@ -357,6 +455,7 @@ def status():
         s["timings"] = _state["timings"].copy()
         s["cam_ips"] = _state["cam_ips"].copy()
         s["ai_counts"] = _state["ai_counts"].copy()
+        s["sensor_counts"] = _state["sensor_counts"].copy()
 
     if not s["system_on"]:
         msg = "System is OFF (All Red)"
@@ -376,33 +475,75 @@ def status():
 
 @app.route("/connect", methods=["POST"])
 def connect():
-    ip = (request.json or {}).get("ip", "").strip()
+    raw = (request.json or {}).get("ip", "").strip()
+    host = _normalize_host(raw) or DEFAULT_ESP_HOST
     with _lock:
-        _state["esp32_ip"] = ip
+        _state["esp32_ip"] = host
         _state["wifi_connected"] = False
-    ok, hw_on = _esp32_check(ip)
+    ok, hw_on, sensors = _esp32_check(host)
     with _lock:
         _state["wifi_connected"] = ok
-        if ok:
-            _state["system_on"] = hw_on
-    return jsonify({"success": True, "connected": ok})
+        if sensors is not None:
+            _state["sensor_counts"].update(sensors)
+    return jsonify({
+        "success": True,
+        "connected": ok,
+        "host": host,
+        "resolved_ip": _resolve_host(host) if ok else "",
+    })
+
+
+@app.route("/connect_all", methods=["POST"])
+def connect_all():
+    """Connect traffic ESP32 and all three cameras using saved hostnames."""
+    data = request.json or {}
+    esp_host = _normalize_host(data.get("esp_ip", "")) or DEFAULT_ESP_HOST
+    cam_hosts = {}
+    for lane in ("lane1", "lane2", "lane3"):
+        key = f"cam_{lane}"
+        raw = data.get(key, "")
+        cam_hosts[lane] = _normalize_host(raw) or DEFAULT_CAM_HOSTS[lane]
+
+    with _lock:
+        _state["esp32_ip"] = esp_host
+        _state["wifi_connected"] = False
+        for lane, h in cam_hosts.items():
+            _state["cam_ips"][lane] = h
+
+    esp_ok, hw_on, sensors = _esp32_check(esp_host)
+    cam_status = {}
+    for lane, h in cam_hosts.items():
+        addr = _resolve_host(h)
+        cam_status[lane] = bool(addr)
+
+    with _lock:
+        _state["wifi_connected"] = esp_ok
+        if sensors is not None:
+            _state["sensor_counts"].update(sensors)
+
+    return jsonify({
+        "success": True,
+        "esp_connected": esp_ok,
+        "esp_host": esp_host,
+        "esp_resolved_ip": _resolve_host(esp_host) if esp_ok else "",
+        "cameras": cam_status,
+    })
 
 
 @app.route("/set_cam_ip", methods=["POST"])
 def set_cam_ip():
     data = request.json or {}
     lane = data.get("lane", "")
-    ip = data.get("ip", "").strip()
-    
-    # Clean up the IP in case the user pasted "http://10.x.x.x" by mistake
-    ip = ip.replace("http://", "").replace("https://", "")
-    if "/" in ip:
-        ip = ip.split("/")[0]
-        
+    host = _normalize_host(data.get("ip", ""))
+
     if lane in ("lane1", "lane2", "lane3"):
         with _lock:
-            _state["cam_ips"][lane] = ip
-    return jsonify({"success": True})
+            _state["cam_ips"][lane] = host
+    return jsonify({
+        "success": True,
+        "host": host,
+        "resolved_ip": _resolve_host(host) if host else "",
+    })
 
 
 @app.route("/set_mode", methods=["POST"])
@@ -508,6 +649,21 @@ def clear_emergency():
     return jsonify({"success": True})
 
 
+@app.route("/reset_sensor", methods=["POST"])
+def reset_sensor():
+    """Forward Ultrasonic counter reset to ESP32 and clear local state."""
+    with _lock:
+        ip = _state["esp32_ip"]
+        _state["sensor_counts"] = {"lane1": 0, "lane2": 0, "lane3": 0}
+    addr = _resolve_host(ip)
+    if addr:
+        try:
+            requests.post(f"http://{addr}/reset_counts", timeout=3.5)
+        except Exception:
+            pass
+    return jsonify({"success": True})
+
+
 @app.route("/system_power", methods=["POST"])
 def system_power():
     on = (request.json or {}).get("on", True)
@@ -573,6 +729,11 @@ if __name__ == "__main__":
     print("═" * 42)
     print(f"   Local  →  http://localhost:5000")
     print(f"   Phone  →  http://{ip}:5000")
+    print("─" * 42)
+    print("   mDNS devices (set once, same on any hotspot):")
+    print(f"   ESP32      →  {DEFAULT_ESP_HOST}")
+    for lane, h in DEFAULT_CAM_HOSTS.items():
+        print(f"   {lane:8}  →  {h}")
     print("═" * 42 + "\n")
     app.run(host="0.0.0.0", port=5000,
             debug=False, use_reloader=False, threaded=True)

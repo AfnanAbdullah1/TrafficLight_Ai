@@ -15,10 +15,10 @@
 
 | 🖥️ Live Web Dashboard | 🛠️ Hardware Setup & Model |
 | :---: | :---: |
-| ![Dashboard Preview](assets/dashboard_preview.png) | ![Hardware Setup](assets/hardware_setup.png) |
+| ![Dashboard Preview](Images/dashboard_preview.png) | ![Hardware Setup](Images/HardwareDesign.jpeg) |
 | *Real-time video feeds, AI car counts & signal controls* | *3-lane physical intersection with ESP32 & LEDs* |
 
-*(Screenshots will appear here once you drop your pictures into the [`assets/`](assets/) folder)*
+*(Drop `dashboard_preview.png` into [`Images/`](Images/) to show your web dashboard screenshot)*
 
 ---
 
@@ -39,7 +39,11 @@ Normal traffic lights change on rigid, fixed timers. Even when a road is complet
 
 ---
 
-## 🏗️ How It Works (Simple Architecture)
+## 🏗️ System Flow & Architecture
+
+<p align="center">
+  <img src="Images/FlowDiagram.jpg" alt="System Flow Diagram" width="100%">
+</p>
 
 ```
         📷 3x ESP32-CAMs                   💻 Laptop / PC                    🚦 ESP32 Controller
@@ -176,7 +180,9 @@ TrafficLight_Ai/
 ├── LICENSE                    # MIT License
 ├── README.md                  # This file
 │
-├── assets/                    # Project screenshots and demo photos
+├── Images/                    # Flow diagram & hardware screenshots
+│   ├── FlowDiagram.jpg        # System architecture and workflow diagram
+│   └── HardwareDesign.jpeg    # Physical intersection model & hardware photo
 │
 ├── models/
 │   └── best.pt                # Custom trained YOLOv8 model

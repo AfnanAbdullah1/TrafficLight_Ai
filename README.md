@@ -141,23 +141,52 @@ python app.py
 
 ---
 
-## 🎮 Web Dashboard & Controls
-
-The web dashboard allows monitoring and controlling the whole system from any phone, laptop, or tablet:
-
-- **Live Video Feeds:** Shows all 3 lanes with AI bounding boxes.
-- **Signal Status:** Shows which lane is currently GREEN, YELLOW, or RED.
-- **Ultrasonic Car Counters:** Displays live car counts detected by HC-SR04 sensors with a 1-click reset button.
-- **Emergency Button:** Turn all lights RED immediately with one click.
-- **Mode Toggle:** Switch between Autonomous Sequence Mode and Manual Signal Override.
-
-### ⌨️ Keyboard Shortcuts
-- Press **`1`**, **`2`**, or **`3`** → Force Green on Lane 1, 2, or 3
-- Press **`A`** → Switch to Automatic AI Mode
-- Press **`M`** → Switch to Manual Mode
-- Press **`Esc`** → Clear Emergency and resume normal traffic
-
 ---
+
+## 🎮 Comprehensive Web Dashboard Features
+
+The web dashboard functions as a centralized mission control center accessible from any **laptop, desktop, tablet, or smartphone**:
+
+### 1. 📱 Full Mobile & Remote Control
+- **Cross-Platform Responsive UI:** Access directly on your phone browser by connecting to the same Wi-Fi hotspot (`http://<PC-IP>:5000`) or from anywhere in the world using **Ngrok / Cloudflare** tunnels.
+- **Touch-Friendly Controls:** Change signal phases, adjust lane timers, trigger emergency halts, and monitor live AI camera streams directly from your mobile screen.
+
+### 2. 🎛️ Manual Route Control
+- **Switch to Manual Mode:** Toggle between autonomous AI sequencing and manual operator control at any moment (`setMode('manual')` or key `M`).
+- **Direct Signal Override:** Force any specific lane (Lane 1, 2, or 3) to 🟢 **GREEN**, 🟡 **YELLOW**, or 🔴 **RED** with a single click.
+- **Lane-by-Lane Adjustments:** Use `+` and `−` incremental buttons to add or subtract seconds for specific lanes on the fly.
+
+### 3. 🚨 Emergency Alert & Priority Route Override
+- **🛑 Stop All (All Red):** One-tap button immediately turns all 3 lanes RED, halting all intersection traffic during critical emergencies.
+- **🚑 Open Priority Route:** Instantly open an emergency green corridor for **Lane 1**, **Lane 2**, or **Lane 3** (ideal for ambulances, fire trucks, or police) while locking all conflicting lanes in RED.
+- **⏱️ +5s to Current Green:** Tap anytime to extend the active green light by +5 seconds for passing convoys or heavy vehicles before changing.
+- **✅ Clear Emergency:** Safely resumes standard sequencing with a single tap or pressing `Esc`.
+
+### 4. 🔄 Default Sequence vs. Traffic Density Timing
+- **Default Sequence Timing:** When traffic flow is balanced, the system runs in a smooth round-robin sequence (5s green per lane).
+- **Congestion-Adaptive Jam Relief:** If vehicle queues grow in any lane, the green timer automatically extends to clear the bottleneck:
+  - 🚗 **1 Car:** 5 seconds (standard sequence)
+  - 🚗🚗 **2 Cars:** 7 seconds (+2s extension)
+  - 🚗🚗🚗 **3+ Cars (Heavy Traffic / Jam):** 10 seconds (+5s extension)
+- **Timing Presets:** One-click presets for ⚡ **Default (5s)**, ⚖️ **Equal (5s)**, and ⚙️ **Custom Timing** inputs to enter exact seconds for every road.
+
+### 5. 📡 Ultrasonic Sensor Live Telemetry
+- Real-time vehicle counting per lane powered by HC-SR04 proximity distance sensors.
+- Color-coded traffic density badges:
+  - 🔵 **0 Cars:** Low Traffic (`sensor-low`)
+  - 🟢 **1–3 Cars:** Moderate Traffic (`sensor-med`)
+  - 🟡 **4+ Cars:** Heavy Traffic Alert (`sensor-high`)
+- **🔄 Reset All Counters:** One-click button to reset hardware and dashboard car counts back to zero.
+
+### 6. ⌨️ Keyboard Shortcuts
+| Key | Action |
+| :---: | :--- |
+| `1` / `2` / `3` | Force Green light on Lane 1 / Lane 2 / Lane 3 |
+| `A` | Switch to Automatic AI Sequence Mode |
+| `M` | Switch to Manual Operator Mode |
+| `D` | Reset to Default Timing (5s each) |
+| `E` | Set Equal Timing across all lanes |
+| `Esc` | Clear Emergency & Resume Normal Operations |
 
 ---
 

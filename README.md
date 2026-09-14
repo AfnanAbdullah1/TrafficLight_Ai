@@ -15,10 +15,8 @@
 
 | 🖥️ Live Web Dashboard | 🛠️ Hardware Setup & Model |
 | :---: | :---: |
-| ![Dashboard Preview](Images/dashboard_preview.png) | ![Hardware Setup](Images/HardwareDesign.jpeg) |
+| ![Live Web Dashboard](Images/Dashboard.png) | ![Hardware Setup](Images/HardwareDesign.jpeg) |
 | *Real-time video feeds, AI car counts & signal controls* | *3-lane physical intersection with ESP32 & LEDs* |
-
-*(Drop `dashboard_preview.png` into [`Images/`](Images/) to show your web dashboard screenshot)*
 
 ---
 
@@ -141,9 +139,11 @@ python app.py
 
 ---
 
----
-
 ## 🎮 Comprehensive Web Dashboard Features
+
+<p align="center">
+  <img src="Images/Dashboard.png" alt="Web Dashboard Interface" width="90%">
+</p>
 
 The web dashboard functions as a centralized mission control center accessible from any **laptop, desktop, tablet, or smartphone**:
 
@@ -243,7 +243,8 @@ TrafficLight_Ai/
 ├── LICENSE                    # MIT License
 ├── README.md                  # This file
 │
-├── Images/                    # Flow diagrams, hardware & training screenshots
+├── Images/                    # Flow diagrams, hardware, UI & training screenshots
+│   ├── Dashboard.png          # Real-time web control dashboard screenshot
 │   ├── FlowDiagram.jpg        # System architecture and workflow diagram
 │   ├── HardwareDesign.jpeg    # Physical intersection model & hardware photo
 │   ├── RoboFlow_mainInterface.png # Roboflow dataset annotation & classes interface

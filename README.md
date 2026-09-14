@@ -7,7 +7,7 @@
 [![ESP32](https://img.shields.io/badge/IoT-ESP32%20%26%20ESP32--CAM-red?style=for-the-badge&logo=espressif&logoColor=white)](https://www.espressif.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
-> A smart traffic light system that uses **AI cameras** to count cars in real time and give more green light time to busy lanes, while turning all lights **RED** instantly if an accident happens.
+> A smart, hybrid traffic management system that uses **YOLOv8 AI cameras** and **hardware ultrasonic sensors** to detect traffic density in real time, dynamically give more green light time to busy lanes, and automatically turn all lights **RED** if an accident happens.
 
 ---
 
@@ -18,22 +18,23 @@
 | ![Dashboard Preview](assets/dashboard_preview.png) | ![Hardware Setup](assets/hardware_setup.png) |
 | *Real-time video feeds, AI car counts & signal controls* | *3-lane physical intersection with ESP32 & LEDs* |
 
-*(Screenshots will appear here once images are added to the [`assets/`](assets/) folder)*
+*(Screenshots will appear here once you drop your pictures into the [`assets/`](assets/) folder)*
 
 ---
 
 ## 💡 What is this Project?
 
-Normal traffic lights change on fixed timers. Even when a road is completely empty, it stays green while busy lanes stay stuck in traffic.
+Normal traffic lights change on rigid, fixed timers. Even when a road is completely empty, it stays green while busy lanes stay stuck in traffic.
 
-**This project solves that:**
-- **👀 AI Cameras Watch Each Lane:** 3 ESP32-CAMs stream live video of the intersection.
-- **🧠 YOLOv8 AI Counts Vehicles:** The AI counts cars in each lane in real time.
-- **⏱️ Dynamic Green Light Time:**
+**This project solves that using Dual-Layer Sensing (AI Vision + Ultrasonic Telemetry):**
+- **👀 AI Cameras (Lane Eyes):** 3 ESP32-CAMs stream live video of each lane to a central laptop.
+- **🧠 YOLOv8 AI (Brain):** Detects vehicle density and classifies cars in real time.
+- **📡 Ultrasonic Proximity Sensors (Physical Verification):** HC-SR04 sensors measure vehicle distance at each lane entrance to count cars physically.
+- **⏱️ Dynamic Green Light Timing:**
   - **1 Car:** 5 seconds green
   - **2 Cars:** 7 seconds green
   - **3+ Cars (Heavy Traffic):** 10 seconds green
-- **🚨 Instant Accident Safety:** If a crash happens, the system detects it and turns **all signals RED** immediately to prevent further accidents.
+- **🚨 Instant Accident Safety:** If a crash happens, the AI immediately trips an **All-Red safety stop** across all lanes to protect motorists.
 - **📶 No IP Address Hassle:** Uses **mDNS** hostnames (`traffic-esp.local`, `cam-lane1.local`), so you never need to copy-paste new IP addresses when switching Wi-Fi.
 
 ---
@@ -47,31 +48,59 @@ Normal traffic lights change on fixed timers. Even when a road is completely emp
   │  cam-lane1.local         │         │   1. Receives video      │         │   1. Changes Red/Yellow/ │
   │  cam-lane2.local         ├────────►│   2. YOLOv8 counts cars  ├────────►│      Green LEDs          │
   │  cam-lane3.local         │  Video  │   3. Calculates green    │  HTTP   │   2. Ultrasonic sensors  │
-  └──────────────────────────┘  Stream │      timer (5s / 7s / 10s│ Command │      double-check cars   │
-                                       │   4. Hosts Web Dashboard │         │   traffic-esp.local      │
-                                       └──────────────────────────┘         └──────────────────────────┘
+  └──────────────────────────┘  Stream │      timer (5s / 7s / 10s│ Command │      physically count    │
+                                       │   4. Hosts Web Dashboard │         │      incoming cars (<5cm)│
+                                       └──────────────────────────┘         │   traffic-esp.local      │
+                                                                            └──────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Hardware Used
+## 📡 Ultrasonic Sensors & Dual-Layer Car Counting
+
+In addition to computer vision, the system integrates **3× HC-SR04 ultrasonic distance sensors** directly onto the master ESP32 controller.
+
+### ❓ Why use Ultrasonic Sensors with Cameras?
+Cameras can suffer from bad lighting, lens obstructions, or network lags. Ultrasonic sensors provide a **hardware-level second layer of truth**:
+- **Sonic Wave Detection:** Emits a 10µs ultrasonic pulse and measures echo reflection time (`Distance = Time × 0.034 / 2 cm`).
+- **Proximity Trigger:** When a car gets closer than **5 cm** (`DIST_THRESHOLD`), the sensor registers a vehicle arrival.
+- **Smart Anti-Double-Count Logic:** If a car stops in front of the sensor waiting at a red light, a software state latch (`carPresent`) prevents it from repeatedly incrementing. Only after the car drives away does it reset for the next vehicle.
+- **Live Telemetry & Dashboard Sync:** Counts are transmitted over Wi-Fi to the Flask dashboard with live color badges:
+  - 🔵 **0 Cars:** Low traffic (`sensor-low`)
+  - 🟢 **1–3 Cars:** Medium traffic (`sensor-med`)
+  - 🟡 **4+ Cars:** High traffic warning (`sensor-high`)
+- **Remote Zeroing:** Features a 1-click **"🔄 Reset All Counters"** button on the web dashboard that calls `/reset_sensor` to clear counts both in memory and on the physical ESP32.
+
+```
+       HC-SR04 Sensor                      ESP32 WROOM Controller
+    ┌──────────────────┐                     ┌──────────────────┐
+    │  VCC (5V)        ├─────────────────────┤ 5V (VIN)         │
+    │  TRIG (Trigger)  ├─────────────────────┤ GPIO 13 / 14 / 15│
+    │  ECHO (Echo)     ├──[ 1kΩ Resistor ]───┤ GPIO 12 / 27 / 32│
+    │  GND (Ground)    ├─────────────────────┤ GND              │
+    └──────────────────┘                     └──────────────────┘
+```
+
+---
+
+## 🛠️ Hardware Specifications
 
 | Component | Qty | Role |
 | :--- | :---: | :--- |
-| **ESP32 WROOM** | 1 | Master board — controls all 9 LEDs & reads distance sensors |
-| **ESP32-CAM (AI-Thinker)** | 3 | Camera boards — streams live video for each lane |
-| **Traffic Light Modules** | 3 | Red, Yellow, and Green LEDs for 3 lanes |
-| **HC-SR04 Sensors** | 3 | Ultrasonic sensors to count cars by distance (<5 cm) |
+| **ESP32 WROOM** | 1 | Master controller — drives 9 signal LEDs & polls ultrasonic sensors |
+| **ESP32-CAM (AI-Thinker)** | 3 | Dedicated camera nodes — streams live MJPEG video per lane |
+| **Traffic Light Modules** | 3 | Road A (Lane 1), Road B (Lane 2), Road C (Lane 3) LEDs |
+| **HC-SR04 Sensors** | 3 | Ultrasonic sensors for physical vehicle presence verification |
 
 ### 📌 Wiring Pinout (ESP32 WROOM)
 
-| Lane | 🔴 Red LED | 🟡 Yellow LED | 🟢 Green LED | 📡 Ultrasonic (TRIG / ECHO) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Lane 1** | GPIO 23 | GPIO 22 | GPIO 21 | GPIO 13 / GPIO 12 |
-| **Lane 2** | GPIO 19 | GPIO 18 | GPIO 5 | GPIO 14 / GPIO 27 |
-| **Lane 3** | GPIO 26 | GPIO 25 | GPIO 4 | GPIO 15 / GPIO 32 |
+| Lane | 🔴 Red LED | 🟡 Yellow LED | 🟢 Green LED | 📡 Ultrasonic TRIG | 📡 Ultrasonic ECHO |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Lane 1 (Road A)** | GPIO 23 | GPIO 22 | GPIO 21 | **GPIO 13** | **GPIO 12** |
+| **Lane 2 (Road B)** | GPIO 19 | GPIO 18 | GPIO 5  | **GPIO 14** | **GPIO 27** |
+| **Lane 3 (Road C)** | GPIO 26 | GPIO 25 | GPIO 4  | **GPIO 15** | **GPIO 32** |
 
-> 📖 **Full Hardware Guide:** See [docs/HARDWARE_GUIDE.md](docs/HARDWARE_GUIDE.md) for breadboard connections and assembly steps.
+> 📖 **Full Hardware Guide:** See [docs/HARDWARE_GUIDE.md](docs/HARDWARE_GUIDE.md) for step-by-step assembly and breadboard diagrams.
 
 ---
 
@@ -113,9 +142,10 @@ python app.py
 The web dashboard allows monitoring and controlling the whole system from any phone, laptop, or tablet:
 
 - **Live Video Feeds:** Shows all 3 lanes with AI bounding boxes.
-- **Signal Status:** Shows which lane is currently GREEN or RED.
-- **Sensor Counters:** Displays cars detected by ultrasonic sensors with a reset button.
-- **Emergency Button:** Turn all lights RED with one click.
+- **Signal Status:** Shows which lane is currently GREEN, YELLOW, or RED.
+- **Ultrasonic Car Counters:** Displays live car counts detected by HC-SR04 sensors with a 1-click reset button.
+- **Emergency Button:** Turn all lights RED immediately with one click.
+- **Mode Toggle:** Switch between Autonomous Sequence Mode and Manual Signal Override.
 
 ### ⌨️ Keyboard Shortcuts
 - Press **`1`**, **`2`**, or **`3`** → Force Green on Lane 1, 2, or 3
@@ -156,13 +186,13 @@ TrafficLight_Ai/
 │
 ├── firmware/                  # Arduino code for microcontrollers
 │   ├── wifi_config.h          # Wi-Fi settings
-│   ├── traffic_controller/    # ESP32 WROOM code (LEDs & Sensors)
+│   ├── traffic_controller/    # ESP32 WROOM code (LEDs & HC-SR04 Sensors)
 │   └── CameraWebServer/       # ESP32-CAM code (mDNS video stream)
 │
 ├── data/                      # Dataset files & annotations
 │
 ├── docs/                      # Detailed Guides
-│   ├── HARDWARE_GUIDE.md      # Physical wiring & hardware instructions
+│   ├── HARDWARE_GUIDE.md      # Physical wiring & ultrasonic instructions
 │   ├── MDNS_SETUP.md          # mDNS setup (no IP paste needed)
 │   ├── DEPLOYMENT_GUIDE.md    # Remote internet access (Ngrok/Cloudflare)
 │   ├── Full_Project_Description.pdf
@@ -178,17 +208,18 @@ TrafficLight_Ai/
 
 You can copy and paste these points into your CV / Resume under **Projects**:
 
-- **AI Smart Traffic Light System (Computer Vision & IoT)**
-  - Built an intelligent 3-lane traffic control system using **YOLOv8** and **ESP32 microcontrollers** to dynamically change signal timing based on real-time vehicle density.
-  - Implemented automatic accident detection that triggers an emergency all-red stop in **<100ms** to prevent secondary collisions.
-  - Configured zero-touch **mDNS** networking so devices auto-connect without static IP configuration.
-  - Developed a real-time web dashboard using **Flask** and **OpenCV** with live video feeds, ultrasonic sensor data, and remote control via cloud tunnels.
+- **AI Smart Traffic Light System (Computer Vision & IoT Sensor Fusion)**
+  - Architected an adaptive 3-lane intersection controller using **YOLOv8** and **ESP32 microcontrollers**, dynamically modulating green light phase durations based on real-time vehicle density.
+  - Implemented a **dual-modal sensing pipeline** combining computer vision vehicle tracking with hardware-level **HC-SR04 ultrasonic distance sensors** for fail-safe vehicle counting and proximity verification.
+  - Built an automated accident-detection protocol that triggers an emergency all-red stop in **<100ms** to prevent secondary collisions upon detecting a vehicle crash.
+  - Configured zero-touch **mDNS** networking (`.local` resolution) for seamless plug-and-play node synchronization across changing Wi-Fi environments.
+  - Developed a full-stack **Flask** web dashboard featuring low-latency MJPEG video streaming, live ultrasonic telemetry, manual overrides, and secure remote tunneling via **Ngrok / Cloudflare**.
 
 ---
 
 ## 📄 Documentation Links
 
-- 🔧 [Step-by-step Hardware Wiring Guide](docs/HARDWARE_GUIDE.md)
+- 🔧 [Step-by-step Hardware Wiring & Ultrasonic Guide](docs/HARDWARE_GUIDE.md)
 - 📡 [mDNS Wi-Fi Setup Guide](docs/MDNS_SETUP.md)
 - 🌐 [Remote Internet Access Guide](docs/DEPLOYMENT_GUIDE.md)
 - 📑 [Full Project Report (PDF)](docs/Full_Project_Description.pdf)

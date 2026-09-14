@@ -159,15 +159,49 @@ The web dashboard allows monitoring and controlling the whole system from any ph
 
 ---
 
-## 🧠 AI Model Details
+---
 
-- **Model:** Ultralytics YOLOv8 (trained on custom dataset).
-- **Classes:**
-  1. `OneCar` → Assigns **5 seconds** green
-  2. `TwoCar` → Assigns **7 seconds** green
-  3. `ThreeCar` → Assigns **10 seconds** green
-  4. `Accident` → Triggers **Immediate All-Red** safety halt
-- **Weights:** Saved in [`models/best.pt`](models/best.pt)
+## 🧠 AI Model & Custom Training Pipeline
+
+The computer vision engine is powered by **Ultralytics YOLOv8**, fine-tuned on a custom dataset specifically built for this physical intersection setup.
+
+<p align="center">
+  <img src="Images/RoboFlow_mainInterface.png" alt="Roboflow Annotation Interface" width="85%">
+</p>
+
+### 🔄 End-to-End ML Pipeline (From Scratch)
+
+1. **📸 Image Collection via ESP32-CAM:**
+   - Captured real images using the **exact same ESP32-CAM modules** mounted on the physical intersection model.
+   - Capturing frames from the hardware perspective eliminated camera lens distortion and lighting mismatch (zero domain shift).
+
+2. **🏷️ Annotation & Augmentation on Roboflow:**
+   - Uploaded the collected image dataset to [Roboflow Universe](https://universe.roboflow.com/afnan-yzsee/toycars-klrio/dataset/2).
+   - Annotated bounding boxes across 4 custom classes:
+     - 💥 **`Accident`**: Detects collisions or overturned vehicles to trigger emergency safety stops.
+     - 🚗🚗🚗 **`ThreeCar`**: Detects 3 vehicles (heavy congestion).
+     - 🚗🚗 **`TwoCar`**: Detects 2 vehicles (moderate congestion).
+     - 🚗 **`OneCar`**: Detects a single vehicle (light traffic).
+   - Applied pre-processing and data augmentations (random rotations ±15°, brightness changes ±15%, and horizontal flips) to produce 220+ training samples.
+
+3. **⚡ GPU Model Training on Google Colab:**
+   - Exported the YOLOv8-formatted dataset directly into **Google Colab** with GPU acceleration.
+   - Trained the model for multiple epochs until loss converged and precision/recall peaked.
+   - Extracted the optimal weights checkpoint [`models/best.pt`](models/best.pt) and integrated it into the central Flask inference worker.
+
+<p align="center">
+  <img src="Images/RoboFlow_ModelAnalytics.png" alt="Roboflow Model Analytics" width="70%">
+</p>
+
+### 🎯 Detection Classes & Dynamic Signal Logic
+
+| Class | Traffic Condition | Signal Duration | Action Triggered |
+| :--- | :---: | :---: | :--- |
+| **`Accident`** | 💥 Collision / Hazard | Immediate | **All-Red Safety Stop** on all lanes (<100ms) |
+| **`ThreeCar`** | 🚗🚗🚗 Heavy Traffic | **10 Seconds** | Extended Green phase |
+| **`TwoCar`** | 🚗🚗 Moderate Traffic | **7 Seconds** | Standard Green phase |
+| **`OneCar`** | 🚗 Light Traffic | **5 Seconds** | Baseline Green phase |
+| **`None`** | Empty Lane | Baseline (5s) | Proceeds to next lane in sequence |
 
 ---
 
@@ -180,9 +214,11 @@ TrafficLight_Ai/
 ├── LICENSE                    # MIT License
 ├── README.md                  # This file
 │
-├── Images/                    # Flow diagram & hardware screenshots
+├── Images/                    # Flow diagrams, hardware & training screenshots
 │   ├── FlowDiagram.jpg        # System architecture and workflow diagram
-│   └── HardwareDesign.jpeg    # Physical intersection model & hardware photo
+│   ├── HardwareDesign.jpeg    # Physical intersection model & hardware photo
+│   ├── RoboFlow_mainInterface.png # Roboflow dataset annotation & classes interface
+│   └── RoboFlow_ModelAnalytics.png # Training metrics & loss curves
 │
 ├── models/
 │   └── best.pt                # Custom trained YOLOv8 model
@@ -216,6 +252,7 @@ You can copy and paste these points into your CV / Resume under **Projects**:
 
 - **AI Smart Traffic Light System (Computer Vision & IoT Sensor Fusion)**
   - Architected an adaptive 3-lane intersection controller using **YOLOv8** and **ESP32 microcontrollers**, dynamically modulating green light phase durations based on real-time vehicle density.
+  - Curated a custom intersection dataset using **ESP32-CAMs**, labeled across 4 traffic classes on **Roboflow**, and trained an optimized **YOLOv8** detector on **Google Colab (GPU)** to produce production-grade edge inference weights (`best.pt`).
   - Implemented a **dual-modal sensing pipeline** combining computer vision vehicle tracking with hardware-level **HC-SR04 ultrasonic distance sensors** for fail-safe vehicle counting and proximity verification.
   - Built an automated accident-detection protocol that triggers an emergency all-red stop in **<100ms** to prevent secondary collisions upon detecting a vehicle crash.
   - Configured zero-touch **mDNS** networking (`.local` resolution) for seamless plug-and-play node synchronization across changing Wi-Fi environments.
